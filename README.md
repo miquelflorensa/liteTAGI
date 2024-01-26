@@ -1,5 +1,5 @@
 # liteTAGI
-Python basic implementation of TAGI. 
+Python basic implementation of TAGI (Tractable Approximate Gaussian Inference).
 
 Doesn't manages neither batches and multiple outputs.
 
