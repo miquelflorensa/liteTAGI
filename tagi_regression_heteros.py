@@ -1,14 +1,14 @@
 ###################################################################################################
-# Author: Miquel Florensa
+# Author: Miquel Florensa (miquelflorensa11@gmail.com)
 # Date: 10/05/2024
-# Description: This code implements the AGVI algorithm for the TAGI (TAGI-V) 
-#              model with heteroscedastic noise
+# Description: This code implements the AGVI algorithm for the TAGI  
+#              model with heteroscedastic noise (TAGI-V).
 #              The code is based on the following paper:
+#              - James-A. Goulet, Luong-Ha Nguyen, and Said Amiri.
+#                Tractable approximate Gaussian inference for Bayesian neural networks. JMLR, 2021
 #              - Bargob Deka, Luong-Ha Nguyen and James-A. Goulet. 
 #                Analytically tractable heteroscedastic uncertainty quantification
 #                in Bayesian neural networks for regression tasks. Neurocomputing, 2024
-#              - James-A. Goulet, Luong-Ha Nguyen, and Said Amiri.
-#                Tractable approximate Gaussian inference for Bayesian neural networks. JMLR, 2021
 ###################################################################################################
 
 import numpy as np
@@ -441,3 +441,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
