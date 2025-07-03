@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # registers the 3D projection
 
 class Normal:
     def __init__(self, mean, std):
@@ -12,6 +14,50 @@ def create_sin_data():
     x = np.linspace(-5, 5, 200)
     y = x**3 + np.random.randn(len(x))*3
     return x, y
+
+def create_sin_data_2D_input():
+    # Example with 2 inputs and 1 output
+    x = np.linspace(-5, 5, 200)
+    x = np.column_stack((x, 0.5*x))  # 2 input features
+    y = x[:,0]**3 + np.random.randn(len(x))*3  # 1 output
+    return x, y
+
+def load_MNIST():
+    # Load MNIST dataset
+    from sklearn.datasets import fetch_openml
+    mnist = fetch_openml('mnist_784', version=1)
+    X = mnist.data
+    y = mnist.target.astype(int)
+    return X, y
+
+import numpy as np
+
+def create_sin_data_2D_output():
+    """
+    Generates synthetic data with 2 input features and 2 output targets.
+    
+    Returns:
+      x: np.ndarray of shape (N, 2), where
+         x[:,0] = linspace(-5,5,N)
+         x[:,1] = 0.5 * x[:,0]
+      y: np.ndarray of shape (N, 2), where
+         y[:,0] = sin(x[:,0]) + noise
+         y[:,1] = sin(x[:,1]) + noise
+    """
+    N = 200
+    # build inputs
+    x1 = np.linspace(-5, 5, N)
+    x2 = 0.5 * x1
+    x = np.column_stack((x1, x2))
+    
+    # build outputs with small Gaussian noise
+    noise_std = 0.1
+    y1 = np.sin(x1) + np.random.randn(N) * noise_std
+    y2 = np.sin(x2) + np.random.randn(N) * noise_std
+    y = np.column_stack((y1, y2))
+    
+    return x, y
+
 
 def InitializeParameters(units):
     # Param initialization
@@ -107,7 +153,7 @@ def InitializeCovariances(units):
 
 def feed_forward(x, units, params, states, cov):
     for j in range(units[0]):
-            states["ma"][0][j] = x
+            states["ma"][0][j] = x[j]
             states["Sa"][0][j] = 0
 
     # For every layer
@@ -147,6 +193,7 @@ def feed_forward(x, units, params, states, cov):
             for j in range(no):
                 relu_aux = ReLU(states["mz"][i+1][j])
                 states["ma"][i+1][j] = relu_aux
+
                 if (relu_aux == 0):
                     states["Sa"][i+1][j] = 0
                     states["J"][i+1][j] = 0
@@ -160,7 +207,10 @@ def feed_forward(x, units, params, states, cov):
                 cov["cov_z_b"][i][k] = params["Sb"][i][k]
                 cov["cov_z_z"][i][j][k] = states["Sz"][i][j] * states["J"][i][j] * params["mw"][i][j][k]
 
-        states["cov_yz"][-1][0] = states["Sz"][-1][0]
+    
+    # states["cov_yz"][-1][0] = states["Sz"][-1][0]
+    for j in range(units[-1]):
+        states["cov_yz"][-1][j] = states["Sz"][-1][j]
 
     return params, states, cov
 
@@ -203,11 +253,19 @@ def states_feed_backward(y, params, units, states, cov, sigma_v):
         deltas["dmb"].append(dmb)
         deltas["dSb"].append(dSb)
 
-    my = states["mz"][-1][0]
-    Sy = states["Sz"][-1][0] + sigma_v**2
+    # my = states["mz"][-1][0]
+    # Sy = states["Sz"][-1][0] + sigma_v**2
 
-    deltas["dmz"][-1][0] = states["mz"][-1][0] + (states["cov_yz"][-1][0] / Sy) * (y - my)
-    deltas["dSz"][-1][0] = states["Sz"][-1][0] - (states["cov_yz"][-1][0] / Sy) * states["cov_yz"][-1][0] 
+    # deltas["dmz"][-1][0] = states["mz"][-1][0] + (states["cov_yz"][-1][0] / Sy) * (y - my)
+    # deltas["dSz"][-1][0] = states["Sz"][-1][0] - (states["cov_yz"][-1][0] / Sy) * states["cov_yz"][-1][0] 
+
+    for j in range(units[-1]):
+        my = states["mz"][-1][j]
+        Sy = states["Sz"][-1][j] + sigma_v**2
+
+        cov_yz = states["cov_yz"][-1][j]
+        deltas["dmz"][-1][j] = my + (cov_yz / Sy) * (y[j] - my)
+        deltas["dSz"][-1][j] = states["Sz"][-1][j] - (cov_yz / Sy) * cov_yz
 
 
     #############################
@@ -253,10 +311,57 @@ def states_feed_backward(y, params, units, states, cov, sigma_v):
         
     return params, states, cov
     
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_2in2out_predictions(x_test, y_test, y_pred, sy_pred, sort_by=0):
+    """
+    x_test : array (N, 2)       test inputs
+    y_test : array (N, 2)       true outputs
+    y_pred : array (N, 2)       predicted means
+    sy_pred: array (N, 2)       predicted std-devs
+    sort_by: which input dim to sort/plot along (0 or 1)
+    """
+    # 1) sort so curves are smooth
+    idx = np.argsort(x_test[:, sort_by])
+    x = x_test[idx, sort_by]
+    yt = y_test[idx]
+    yp = y_pred[idx]
+    s  = sy_pred[idx]
+
+    # 2) make two stacked subplots
+    fig, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+    labels = ['Output 1', 'Output 2']
+    colors = ['C0', 'C1']
+
+    for m, ax in enumerate(axes):
+        # true vs predicted
+        ax.scatter(x, yt[:, m], color=colors[m], s=20, label='true')
+        ax.plot(   x, yp[:, m], '-', color=colors[m], label='pred')
+        # ±1σ band
+        ax.fill_between(
+            x,
+            yp[:, m] - s[:, m],
+            yp[:, m] + s[:, m],
+            color=colors[m],
+            alpha=0.3
+        )
+        ax.set_ylabel(labels[m])
+        ax.legend(loc='best')
+
+    axes[-1].set_xlabel(f'Input dimension {sort_by}')
+    plt.tight_layout()
+    plt.show()
+
 
 def main():
-    x, y = create_sin_data()
-
+    # x, y = create_sin_data()
+    # x, y = create_sin_data_2D_input()
+    # x, y = create_sin_data_2D_output()
+    x, y = load_MNIST()
+    
+    print("x shape", x.shape)
+    print("y shape", y.shape)
 
     # Divide data into training and test sets (80/20) randomly
     # x_train is obtained randomly from x
@@ -271,7 +376,7 @@ def main():
     # Normalize data
     x_norm = Normal(np.mean(x_train), np.std(x_train))
     y_norm = Normal(np.mean(y_train), np.std(y_train))
-    # print("x_norm", x_norm.mean, x_norm.std)
+    print("x_norm", x_norm.mean, x_norm.std)
 
     x_train = (x_train - x_norm.mean)/x_norm.std
     y_train = (y_train - y_norm.mean)/y_norm.std
@@ -286,39 +391,18 @@ def main():
     #plt.show()
     
     #units = [1, 50, 1] # input, hidden, output
-    units = [1, 50, 1] # input, hidden, output
+    units = [784, 50, 50, 10] # input, hidden, output
 
     # Training
     epochs = 10
     iterations = len(x_train)
     #iterations = 1
-    sigma_v = 3/y_norm.std
+    sigma_v = 0.01
 
     # Initialize parameters
 
     params = InitializeParameters(units)
-
-    # Print Expected value of means, expected value of variances,
-    # variance of means, variance of variances for each layer
-    for i in range(len(units)-1):
-        print("Layer", i)
-        print("mw", i, np.mean(params["mw"][i]), np.var(params["mw"][i]))
-        print("Sw", i, np.mean(params["Sw"][i]), np.var(params["Sw"][i]))
-        print("mb", i, np.mean(params["mb"][i]), np.var(params["mb"][i]))
-        print("Sb", i, np.mean(params["Sb"][i]), np.var(params["Sb"][i]))
-
     states = InitializeStates(units)
-
-    # Print Expected value of means, expected value of variances,
-    # variance of means, variance of variances for each layer
-    for i in range(len(units)):
-        print("Layer", i)
-        print("mz", i, np.mean(states["mz"][i]), np.var(states["mz"][i]))
-        print("Sz", i, np.mean(states["Sz"][i]), np.var(states["Sz"][i]))
-        print("ma", i, np.mean(states["ma"][i]), np.var(states["ma"][i]))
-        print("Sa", i, np.mean(states["Sa"][i]), np.var(states["Sa"][i]))
-    
-
     cov = InitializeCovariances(units)
 
     for i in range(epochs):
@@ -333,11 +417,84 @@ def main():
             x_batch = x_train[j]
             y_batch = y_train[j]
 
+            # One hot encoding
+            y_batch = np.zeros((len(y_batch), 10))
+            for k in range(len(y_batch)):
+                y_batch[k][y_train[j][k]] = 1
+
+
             # Feed forward
             params, states, cov = feed_forward(x_batch, units, params, states, cov)
 
             # Feed backward
             params, states, cov = states_feed_backward(y_batch, params, units, states, cov, sigma_v)
+
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D  # registers 3D projection
+
+    # 1. Compute predictions on the test set
+    y_pred = np.zeros((len(x_test), 2))
+    sy_pred = np.zeros((len(x_test), 2))
+    for i in range(len(x_test)):
+        feed_forward(x_test[i], units, params, states, cov)
+        # grab both outputs
+        for m in range(2):
+            y_pred[i,m]  = states["mz"][-1][m]
+            sy_pred[i,m] = np.sqrt(states["Sz"][-1][m])
+
+    y_test = np.array(y_test)   # assume shape (N,2) as well
+
+    # 2. Build a grid over the two input dims
+    n_grid = 50
+    x1_vals = np.linspace(x_test[:,0].min(), x_test[:,0].max(), n_grid)
+    x2_vals = np.linspace(x_test[:,1].min(), x_test[:,1].max(), n_grid)
+    X1, X2   = np.meshgrid(x1_vals, x2_vals)
+
+    # 3. Evaluate the model on each grid point for both outputs
+    Yg = np.zeros((n_grid, n_grid, 2))
+    SYg = np.zeros((n_grid, n_grid, 2))
+    for i in range(n_grid):
+        for j in range(n_grid):
+            x_pt = np.array([X1[i,j], X2[i,j]])
+            feed_forward(x_pt, units, params, states, cov)
+            for m in range(2):
+                Yg[i,j,m]  = states["mz"][-1][m]
+                SYg[i,j,m] = np.sqrt(states["Sz"][-1][m])
+
+    # 4. Plot each output in its own 3D subplot
+    fig = plt.figure(figsize=(14,6))
+    for m in range(2):
+        ax = fig.add_subplot(1, 2, m+1, projection='3d')
+        surf = ax.plot_surface(
+            X1, X2, Yg[:,:,m],
+            alpha=0.7, cmap='viridis', edgecolor='none'
+        )
+        # scatter true test points for this output
+        ax.scatter(
+            x_test[:,0], x_test[:,1], y_test[:,m],
+            color='red', s=30, label=f'Test pts (out {m+1})'
+        )
+        ax.set_xlabel('x₁'); ax.set_ylabel('x₂'); ax.set_zlabel(f'y₍{m+1}₎')
+        ax.set_title(f'Output {m+1}: Predicted Mean')
+        ax.legend()
+        fig.colorbar(surf, ax=ax, shrink=0.5, label=f'ŷ₍{m+1}₎')
+
+    plt.tight_layout()
+    plt.show()
+
+    # 5. (Optional) contour‐plot the stddev for each output
+    fig2, axes = plt.subplots(1, 2, figsize=(14,5))
+    for m, ax in enumerate(axes):
+        c = ax.contourf(
+            X1, X2, SYg[:,:,m],
+            levels=20, cmap='magma'
+        )
+        ax.scatter(x_test[:,0], x_test[:,1], c='white', edgecolor='k')
+        ax.set_xlabel('x₁'); ax.set_ylabel('x₂')
+        ax.set_title(f'Output {m+1}: σ_y')
+        fig2.colorbar(c, ax=ax, label=f'σ₍{m+1}₎')
+    plt.tight_layout()
+    plt.show()
 
     # Testing    
     y_pred = []
@@ -347,15 +504,19 @@ def main():
         feed_forward(x_test[i], units, params, states, cov)
 
         # Take mean of last layer
-        y_pred.append(states["mz"][-1][0][0])
-        sy_pred.append(np.sqrt(states["Sz"][-1][0][0])) 
+        y_pred.append(states["mz"][-1])
+        sy_pred.append(np.sqrt(states["Sz"][-1]))
 
-    # print(y_pred)
-    # print(sy_pred)
     # Unnormalize data
     #for i in range(len(y_pred)):
     #    y_pred[i] = y_pred[i]*y_norm.std + y_norm.mean
 
+    print("y_pred shape", np.array(y_pred).shape)
+    print("sy_pred shape", np.array(sy_pred).shape)
+
+    y_test = np.array(y_test)
+    y_pred = np.array(y_pred).reshape(-1, units[-1])
+    sy_pred = np.array(sy_pred).reshape(-1, units[-1])
     # Calculate MSE
     mse = np.mean((y_test - y_pred)**2)
     print("MSE", mse)
@@ -366,29 +527,44 @@ def main():
     sy_pred = np.array(sy_pred)
 
     # Sort the arrays based on x_test
-    sorted_indices = np.argsort(x_test)
+    sorted_indices = np.argsort(x_test[:,0])
     x_test_sorted = x_test[sorted_indices]
     y_test_sorted = y_test[sorted_indices]
     y_pred_sorted = y_pred[sorted_indices]
     sy_pred_sorted = sy_pred[sorted_indices]
     
-    
-    # Plot data
+
+    print("x_test_sorted shape", x_test_sorted.shape)
+    print("y_test_sorted shape", y_test_sorted.shape)
+    print("y_pred_sorted shape", y_pred_sorted.shape)
+    print("sy_pred_sorted shape", sy_pred_sorted.shape)
+
+    # Plot data 2D input
     import matplotlib.pyplot as plt
     # Plot data
-    plt.plot(x_test_sorted, y_test_sorted, 'o')
-    plt.plot(x_test_sorted, y_pred_sorted, 'o')
-
+    plt.plot(x_test_sorted[:,0], y_test_sorted[:,0], 'o')
+    plt.plot(x_test_sorted[:,0], y_pred_sorted[:,0], 'o')
+    plt.plot(x_test_sorted[:,1], y_test_sorted[:,1], 'o')
+    plt.plot(x_test_sorted[:,1], y_pred_sorted[:,1], 'o')
     # Plot variances
-    plt.fill_between(x_test_sorted, y_pred_sorted - sy_pred_sorted.flatten(), y_pred_sorted + sy_pred_sorted.flatten(), color='red', alpha=0.3)
+    plt.fill_between(x_test_sorted[:,0], y_pred_sorted[:,0] - sy_pred_sorted[:,0].flatten(), y_pred_sorted[:,0] + sy_pred_sorted[:,0].flatten(), color='red', alpha=0.3)
+    plt.fill_between(x_test_sorted[:,1], y_pred_sorted[:,1] - sy_pred_sorted[:,1].flatten(), y_pred_sorted[:,1] + sy_pred_sorted[:,1].flatten(), color='blue', alpha=0.3)
 
     # Add title and axis names
     plt.title('Sine function')
     plt.xlabel('x')
     plt.ylabel('y')
-    plt.legend(['test', 'pred'], loc='upper left')
-
+    plt.legend(['test', 'pred', 'test2', 'pred2'], loc='upper left')
     plt.show()
+
+    y_test  = np.array(y_test)
+    y_pred  = np.vstack(y_pred)   # shape (N,2)
+    sy_pred = np.vstack(sy_pred)  # shape (N,2)
+
+    plot_2in2out_predictions(x_test, y_test, y_pred, sy_pred, sort_by=0)
+
+
+    
     
 
 if __name__ == "__main__":
