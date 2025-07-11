@@ -236,7 +236,7 @@ if __name__ == "__main__":
 
     updated_means_Z1, updated_variances_Z1 = initial_mu_Z1, initial_var_Z1
     
-    for i in range(100):
+    for i in range(1000):
         # 3. Perform a SINGLE update for Z1 based on targets for S and S2 sequentially
         # print("--- Performing a SINGLE update for Z1 based on targets for S ---")
         updated_means_Z1_s, updated_variances_Z1_s = update_independent_gaussians_for_sum_target(

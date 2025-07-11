@@ -1,9 +1,13 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import List, Tuple
 from tensorflow.keras.datasets import mnist # For loading MNIST
 from tensorflow.keras.utils import to_categorical # For one-hot encoding labels
 from skimage.transform import resize # For resizing images
+import warnings # To suppress specific warnings
+
+# Suppress scikit-image FutureWarnings related to resize
+warnings.filterwarnings("ignore", category=FutureWarning, module="skimage.transform")
+
 
 # --- 1. Data Handling Class (No Changes Needed) ---
 class DataManager:
@@ -203,7 +207,7 @@ class TAGILayer:
         return delta_mean_prev, delta_var_prev
 
 
-# --- 3. Main Network Class (No Changes Needed) ---
+# --- 3. Main Network Class (Modified for Visualization Access) ---
 class TAGINetwork:
     """A Bayesian Neural Network using Tractable Approximate Gaussian Inference."""
     def __init__(self, layer_units: List[int]):
@@ -221,7 +225,8 @@ class TAGINetwork:
     def predict(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Performs a forward pass through all layers to get a prediction.
-        Compatible with batch sizes.
+        Compatible with batch sizes. This also updates the pre_activation_mean/var
+        attributes in each layer, which are used for visualization.
         """
         activation_mean = x
         activation_var = np.zeros_like(x) # Initial input variance is zero
@@ -306,6 +311,22 @@ class TAGINetwork:
                 delta_z_var = z_var_prev_predicted + gain_za**2 * (delta_a_var - prev_a_var_predicted)
                 delta_z_var = np.maximum(delta_z_var, 1e-9)
 
+    # --- NEW: Methods for visualization access ---
+    def get_layer_info(self, layer_idx: int):
+        """Returns the parameters (mean, var) and last computed pre-activation states
+        of a specific layer."""
+        if not (0 <= layer_idx < len(self.layers)):
+            raise ValueError(f"Layer index {layer_idx} out of bounds.")
+        
+        layer = self.layers[layer_idx]
+        return {
+            "weight_mean": layer.weight_mean,
+            "weight_var": layer.weight_var,
+            "bias_mean": layer.bias_mean,
+            "bias_var": layer.bias_var,
+            "pre_activation_mean": layer.pre_activation_mean, # Last computed during forward pass
+            "pre_activation_var": layer.pre_activation_var    # Last computed during forward pass
+        }
 
 
 def main():
@@ -386,7 +407,7 @@ def main():
         accuracy = np.mean(y_pred_classes == y_test.flatten())
         
         print(f"Epoch {epoch + 1}/{EPOCHS} complete. Test Accuracy: {accuracy:.4f}")
-
+            
     print("\nTraining complete.")
     
     # --- Final Evaluation ---
@@ -394,32 +415,6 @@ def main():
     y_pred_classes_final = np.argmax(y_pred_mean_test, axis=1)
     final_accuracy = np.mean(y_pred_classes_final == y_test.flatten())
     print(f"Final Test Accuracy: {final_accuracy:.4f}")
-
-    # --- Visualization (Optional & Simplified for Classification) ---
-    class_names = [str(i) for i in range(10)] # Class names are just the digits 0-9
-
-    plt.figure(figsize=(10, 10))
-    for i in range(25): # Display 25 images
-        plt.subplot(5, 5, i + 1)
-        plt.xticks([])
-        plt.yticks([])
-        plt.grid(False)
-        
-        # Reshape the flattened image back to NEW_IMAGE_RESOLUTION x NEW_IMAGE_RESOLUTION for plotting
-        # MNIST images are grayscale, so use cmap='gray'
-        img = x_test_resized[i] 
-        plt.imshow(img, cmap='gray')
-        
-        # CORRECTED LINE:
-        true_label = y_test[i] # Access the integer label directly
-        
-        pred_label = y_pred_classes_final[i]
-        
-        color = 'green' if true_label == pred_label else 'red'
-        plt.xlabel(f"True: {class_names[true_label]}\nPred: {class_names[pred_label]}", color=color, fontsize=8)
-    plt.suptitle(f"MNIST Predictions at {NEW_IMAGE_RESOLUTION}x{NEW_IMAGE_RESOLUTION} (Green: Correct, Red: Incorrect)", fontsize=16)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
 
 if __name__ == "__main__":
     main()

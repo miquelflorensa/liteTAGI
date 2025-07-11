@@ -196,22 +196,31 @@ def update_W_from_Z0_and_Z0W_products(
 
 
 if __name__ == "__main__":
-    A_size = 1000
+    A_size = 64
 
     # 1. Initialize Z0, W, B
     print(f"--- Initializing variables (A_size={A_size}) ---")
     
     # Z0: (A) vector
-    initial_mu_Z0 = np.random.normal(0.5, 0.2, A_size)
-    initial_var_Z0 = np.abs(np.random.normal(0.1, 0.05, A_size)) + 1e-6
+    initial_mu_Z0 = np.random.normal(0.0, 1, A_size)
+    initial_var_Z0 = np.abs(np.random.normal(0.0, 0.0, A_size))
+
+    #Make half of the Z0 variables 0
+    initial_mu_Z0[:A_size // 2] = 0.0
+    initial_var_Z0[:A_size // 2] = 0.0
+
 
     # W: (A, A) matrix
     initial_mu_W = np.random.normal(0, 0.1, (A_size, A_size))
-    initial_var_W = np.abs(np.random.normal(0.01, 0.005, (A_size, A_size))) + 1e-6
+    initial_var_W = np.abs(np.random.normal(0.01, 0.5, (A_size, A_size))) + 1e-6
+
+    # W: (A, A) matrix
+    initial_mu_W = np.random.normal(0, 0.1, (A_size, A_size))
+    initial_var_W = np.abs(np.random.normal(0.01, 0.5, (A_size, A_size))) + 1e-6
 
     # B: (A) vector
     initial_mu_B = np.random.normal(0.1, 0.05, A_size)
-    initial_var_B = np.abs(np.random.normal(0.01, 0.005, A_size)) + 1e-6
+    initial_var_B = np.abs(np.random.normal(0.01, 0.5, A_size)) + 1e-6
 
     # 2. Compute Initial Z1 = Z0 @ W + B
     print("--- Computing initial Z1 from Z0, W, B ---")
@@ -228,7 +237,7 @@ if __name__ == "__main__":
 
     updated_means_Z1_from_S2, updated_variances_Z1_from_S2 = initial_mu_Z1, initial_var_Z1
 
-    for i in range(100):
+    for i in range(1000):
         # 3. Perform a SINGLE update for Z1 based on targets for S and S2
         updated_means_Z1, updated_variances_Z1 = update_independent_gaussians_for_sum_target(
             updated_means_Z1_from_S2,
