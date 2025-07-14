@@ -164,14 +164,21 @@ class TAGILayer:
         # relu_var = (z_mean² + σ²) * Φ(z_mean/σ) + 
         #     z_mean * σ * φ(z_mean/σ) - 
         #     relu_mean²
-        # safe_var = np.where(var < 0, 1e-6, var)
-        # z_mean = mean
-        # z_std = np.maximum(np.sqrt(safe_var), 1e-9)
-        # cdfn = np.maximum(norm.cdf(z_mean / z_std), 1E-20)  # CDF of standard normal, avoid division by zero
-        # pdfn = np.maximum(norm.pdf(z_mean / z_std), 1E-20)  # PDF of standard normal, avoid division by zero
-        # relu_mean = np.maximum(z_std * pdfn + z_mean * cdfn, 1E-20)  # Ensure relu_mean is positive
-        # relu_var = np.maximum(-relu_mean * relu_mean + 2 * relu_mean * z_mean - z_mean * z_std * pdfn + (safe_var - z_mean * z_mean) * cdfn, 1E-9)  # Ensure relu_var is positive
-        # jcb = cdfn
+        safe_var = np.where(var < 0, 1e-6, var)
+        z_mean = mean
+        z_std = np.maximum(np.sqrt(safe_var), 1e-9)
+        cdfn = np.maximum(norm.cdf(z_mean / z_std), 1E-20)  # CDF of standard normal, avoid division by zero
+        pdfn = np.maximum(norm.pdf(z_mean / z_std), 1E-20)  # PDF of standard normal, avoid division by zero
+        relu_mean = np.maximum(z_std * pdfn + z_mean * cdfn, 1E-20)  # Ensure relu_mean is positive
+        relu_var = np.maximum(-relu_mean * relu_mean + 2 * relu_mean * z_mean - z_mean * z_std * pdfn + (safe_var - z_mean * z_mean) * cdfn, 1E-9)  # Ensure relu_var is positive
+        jcb = cdfn
+        # positive = mean > 0
+        # relu_mean = mean * positive
+        # relu_var = var * positive
+        # jcb = np.where(positive, 1.0, 0.0)  # Jacobian is 1 where mean > 0, else 0
+        return relu_mean, relu_var, jcb
+
+    def ReLU(self, mean: np.ndarray, var: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         positive = mean > 0
         relu_mean = mean * positive
         relu_var = var * positive
@@ -374,7 +381,9 @@ class TAGINetwork:
                 # Update mean of W_ij using averaged batch values
                 denominator_mu = avg_mu_Z0[i]
                 if np.abs(denominator_mu) < epsilon:
+                    # print(f"Warning: Denominator for mu_W[{i}, {j}] is too small: {denominator_mu}. Using initial value.")
                     updated_mu_W[i, j] = initial_mu_W[i, j]
+                    # updated_mu_W[i, j] = 0.0
                 else:
                     updated_mu_W[i, j] = avg_mu_P_ij[i, j] / denominator_mu
 
@@ -383,7 +392,9 @@ class TAGINetwork:
                 denominator_var = avg_mu_Z0[i]**2 + avg_var_Z0[i]
 
                 if denominator_var < epsilon:
+                    # print(f"Warning: Denominator for var_W[{i}, {j}] is too small: {denominator_var}. Using initial value.")
                     updated_var_W[i, j] = initial_var_W[i, j]
+                    # updated_var_W[i, j] = 1.0
                 else:
                     updated_var_W[i, j] = numerator_var / denominator_var
                 
@@ -505,14 +516,14 @@ class TAGINetwork:
             updated_mu_Z_sum_sq = np.sum(updated_mu_Z**2 + updated_var_Z, axis=1, keepdims=True) # (batch_size, 1)
             updated_var_Z_sum_sq = np.sum(2 * updated_var_Z**2 + 4 * updated_var_Z * updated_mu_Z**2, axis=1, keepdims=True) # (batch_size, 1)  
 
-            print(f"Layer {idx}")
-            print(f"Checking Z just after updates:")
+            # print(f"Layer {idx}")
+            # print(f"Checking Z just after updates:")
 
-            # Print the final means and variances for debugging
-            print(f"Updated Z means (sum) mean: {np.mean(updated_mu_Z_sum)} | target: {target_sum_mean}")
-            print(f"Updated Z variances (sum) mean: {np.mean(updated_var_Z_sum)} | target: {target_sum_var}")
-            print(f"Updated Z means (sum of squares) mean: {np.mean(updated_mu_Z_sum_sq)} | target: {target_sum_mean_sq}")
-            print(f"Updated Z variances (sum of squares) mean: {np.mean(updated_var_Z_sum_sq)} | target: {target_sum_var_sq}")
+            # # Print the final means and variances for debugging
+            # print(f"Updated Z means (sum) mean: {np.mean(updated_mu_Z_sum)} | target: {target_sum_mean}")
+            # print(f"Updated Z variances (sum) mean: {np.mean(updated_var_Z_sum)} | target: {target_sum_var}")
+            # print(f"Updated Z means (sum of squares) mean: {np.mean(updated_mu_Z_sum_sq)} | target: {target_sum_mean_sq}")
+            # print(f"Updated Z variances (sum of squares) mean: {np.mean(updated_var_Z_sum_sq)} | target: {target_sum_var_sq}")
 
             
             # 4. Propagate updates back to W (B is constant)
@@ -524,11 +535,11 @@ class TAGINetwork:
             var_Aw_B_sum = np.sum(var_Aw_B, axis=1, keepdims=True) # (batch_size, 1)
             mu_Aw_B_sum_sq = np.sum(mu_Aw_B**2 + var_Aw_B, axis=1, keepdims=True) # (batch_size, 1)
             var_Aw_B_sum_sq = np.sum(2 * var_Aw_B**2 + 4 * var_Aw_B * mu_Aw_B**2, axis=1, keepdims=True) # (batch_size, 1)
-            print(f"After updating Z0W for Z1 targets:")
-            print(f"mu_Aw_B means (sum) mean: {np.mean(mu_Aw_B_sum)} | target: {target_sum_mean}")
-            print(f"var_Aw_B variances (sum) mean: {np.mean(var_Aw_B_sum)} | target: {target_sum_var}")
-            print(f"mu_Aw_B means (sum of squares) mean: {np.mean(mu_Aw_B_sum_sq)} | target: {target_sum_mean_sq}")
-            print(f"var_Aw_B variances (sum of squares) mean: {np.mean(var_Aw_B_sum_sq)} | target: {target_sum_var_sq}")
+            # print(f"After updating Z0W for Z1 targets:")
+            # print(f"mu_Aw_B means (sum) mean: {np.mean(mu_Aw_B_sum)} | target: {target_sum_mean}")
+            # print(f"var_Aw_B variances (sum) mean: {np.mean(var_Aw_B_sum)} | target: {target_sum_var}")
+            # print(f"mu_Aw_B means (sum of squares) mean: {np.mean(mu_Aw_B_sum_sq)} | target: {target_sum_mean_sq}")
+            # print(f"var_Aw_B variances (sum of squares) mean: {np.mean(var_Aw_B_sum_sq)} | target: {target_sum_var_sq}")
 
             # mu_P_ij, var_P_ij will have shape (batch_size, n_inputs, n_outputs)
             mu_P_ij, var_P_ij = self._rts_smooth_Z0W_components(
@@ -546,12 +557,12 @@ class TAGINetwork:
             mu_Z_P_ij_sum_sq = np.sum(mu_Z_P_ij**2 + var_Z_P_ij, axis=1, keepdims=True) # (batch_size, 1)
             var_Z_P_ij_sum_sq = np.sum(2 * var_Z_P_ij**2 + 4 * var_Z_P_ij * mu_Z_P_ij**2, axis=1, keepdims=True) # (batch_size, 1)
 
-            print(f"Layer {idx}")
-            print(f"Checking Z with updated P_ij:")
-            print(f"Updated Z means (sum) mean: {np.mean(mu_Z_P_ij_sum)} | target: {target_sum_mean}")
-            print(f"Updated Z variances (sum) mean: {np.mean(var_Z_P_ij_sum)} | target: {target_sum_var}")
-            print(f"Updated Z means (sum of squares) mean: {np.mean(mu_Z_P_ij_sum_sq)} | target: {target_sum_mean_sq}")
-            print(f"Updated Z variances (sum of squares) mean: {np.mean(var_Z_P_ij_sum_sq)} | target: {target_sum_var_sq}")
+            # print(f"Layer {idx}")
+            # print(f"Checking Z with updated P_ij:")
+            # print(f"Updated Z means (sum) mean: {np.mean(mu_Z_P_ij_sum)} | target: {target_sum_mean}")
+            # print(f"Updated Z variances (sum) mean: {np.mean(var_Z_P_ij_sum)} | target: {target_sum_var}")
+            # print(f"Updated Z means (sum of squares) mean: {np.mean(mu_Z_P_ij_sum_sq)} | target: {target_sum_mean_sq}")
+            # print(f"Updated Z variances (sum of squares) mean: {np.mean(var_Z_P_ij_sum_sq)} | target: {target_sum_var_sq}")
 
             # This step is crucial: it averages the weight updates across the batch
             # updated_mu_W, updated_var_W will have shape (n_inputs, n_outputs)
@@ -572,12 +583,12 @@ class TAGINetwork:
             final_sum_var = np.sum(final_var_Z, axis=1, keepdims=True) # (batch_size, 1)
             final_sum_mean_sq = np.sum(final_mu_Z**2 + final_var_Z, axis=1, keepdims=True) # (batch_size, 1)
             final_sum_var_sq = np.sum(2 * final_var_Z**2 + 4 * final_var_Z * final_mu_Z**2, axis=1, keepdims=True) # (batch_size, 1)
-            print(f"Layer {idx}")
-            print(f"Final Z after standardization:")
-            print(f"Final Z means (sum) mean: {np.mean(final_sum_mean)} | target: {target_sum_mean}")
-            print(f"Final Z variances (sum) mean: {np.mean(final_sum_var)} | target: {target_sum_var}")
-            print(f"Final Z means (sum of squares) mean: {np.mean(final_sum_mean_sq)} | target: {target_sum_mean_sq}")
-            print(f"Final Z variances (sum of squares) mean: {np.mean(final_sum_var_sq)} | target: {target_sum_var_sq}")
+            # print(f"Layer {idx}")
+            # print(f"Final Z after standardization:")
+            # print(f"Final Z means (sum) mean: {np.mean(final_sum_mean)} | target: {target_sum_mean}")
+            # print(f"Final Z variances (sum) mean: {np.mean(final_sum_var)} | target: {target_sum_var}")
+            # print(f"Final Z means (sum of squares) mean: {np.mean(final_sum_mean_sq)} | target: {target_sum_mean_sq}")
+            # print(f"Final Z variances (sum of squares) mean: {np.mean(final_sum_var_sq)} | target: {target_sum_var_sq}")
             
             if not layer.is_output_layer:
                 mu_a_prev, var_a_prev, _ = layer.mReLU(final_mu_Z, final_var_Z)
@@ -663,9 +674,9 @@ def main():
     NEW_IMAGE_RESOLUTION = 14 
     input_size = NEW_IMAGE_RESOLUTION * NEW_IMAGE_RESOLUTION * 1 
     num_classes = 10
-    UNITS = [input_size, 64, 64, 64, 64, 64, 64, 64, num_classes] 
+    UNITS = [input_size, 64, 64, num_classes] 
     EPOCHS = 10 
-    BATCH_SIZE = 5000 # Changed to 64 for demonstration of larger batch
+    BATCH_SIZE = 8192 # Changed to 64 for demonstration of larger batch
     OBS_NOISE_VAR = 0.01 
 
     print("Loading MNIST data...")
@@ -697,7 +708,7 @@ def main():
     initialization_batch = x_train_flattened[:BATCH_SIZE]
 
     print(f"\nUsing a batch of size {BATCH_SIZE} from training data for weight standardization.")
-    # model.standardize_weights(data_batch=initialization_batch)
+    model.standardize_weights(data_batch=initialization_batch)
 
     # Verify standardization with the same batch
     model.verify_standardization(data_batch=initialization_batch)
